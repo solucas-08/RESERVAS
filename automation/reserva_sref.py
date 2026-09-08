@@ -75,9 +75,12 @@ def preencher_sala(navegador, wait, valor_sala):
         )
     )
 
-    # Verifica se a sala existe nas opções carregadas
+    # Verifica se a sala existe nas opções
+    # carregadas pelo SREF.
     existe = navegador.execute_script("""
-        const d = document.getElementById('salaOptions');
+        const d = document.getElementById(
+            'salaOptions'
+        );
 
         if (!d) {
             return false;
@@ -91,8 +94,11 @@ def preencher_sala(navegador, wait, valor_sala):
     """, valor_sala)
 
     if not existe:
+
         opcoes = navegador.execute_script("""
-            const d = document.getElementById('salaOptions');
+            const d = document.getElementById(
+                'salaOptions'
+            );
 
             if (!d) {
                 return [];
@@ -112,27 +118,43 @@ def preencher_sala(navegador, wait, valor_sala):
         )
 
     campo.clear()
-    campo.send_keys(valor_sala)
+
+    campo.send_keys(
+        valor_sala
+    )
 
     navegador.execute_script("""
         const c = arguments[0];
 
         c.dispatchEvent(
-            new Event('input', {bubbles:true})
+            new Event(
+                'input',
+                {bubbles:true}
+            )
         );
 
         c.dispatchEvent(
-            new Event('change', {bubbles:true})
+            new Event(
+                'change',
+                {bubbles:true}
+            )
         );
 
         c.dispatchEvent(
-            new Event('blur', {bubbles:true})
+            new Event(
+                'blur',
+                {bubbles:true}
+            )
         );
     """, campo)
 
+    # Dá tempo para o SREF consultar os dados
+    # da sala e atualizar os campos dependentes.
     time.sleep(1)
 
-    valor_real = campo.get_attribute("value")
+    valor_real = campo.get_attribute(
+        "value"
+    )
 
     if valor_real != valor_sala:
         raise RuntimeError(
@@ -146,101 +168,59 @@ def preencher_sala(navegador, wait, valor_sala):
     )
 
 
-def obter_capacidade_sala(navegador, wait):
+def obter_capacidade_sala(
+    navegador,
+    wait
+):
     """
-    Obtém a capacidade exibida pelo SREF
-    depois que a sala foi selecionada.
+    Obtém a capacidade da sala diretamente
+    do campo que o próprio SREF preenche:
+
+        id="qtdParticipantes"
+
+    Esse campo é readonly e representa a capacidade
+    retornada pelo próprio sistema/banco do SREF.
+
+    O código NÃO possui uma tabela de capacidades.
     """
 
-    def encontrar_capacidade(driver):
+    campo_capacidade = wait.until(
+        EC.presence_of_element_located(
+            (By.ID, "qtdParticipantes")
+        )
+    )
 
-        resultado = driver.execute_script("""
-            // Procura um elemento que contenha
-            // exatamente o texto "Capacidade:"
-            const elementos = Array.from(
-                document.querySelectorAll(
-                    'label, div, span, p, strong'
-                )
-            );
+    print(
+        "Aguardando o SREF carregar "
+        "a capacidade da sala..."
+    )
 
-            const marcador = elementos.find(
-                el => el.textContent.trim() === 'Capacidade:'
-            );
+    def capacidade_carregada(driver):
 
-            if (!marcador) {
-                return null;
-            }
+        valor = (
+            campo_capacidade
+            .get_attribute("value")
+            or ""
+        ).strip()
 
-            // Primeiro tenta encontrar um input
-            // dentro do mesmo container.
-            let container = marcador.parentElement;
-
-            for (let i = 0; i < 5 && container; i++) {
-
-                const input = container.querySelector(
-                    'input'
-                );
-
-                if (input) {
-
-                    const valor = (
-                        input.value ||
-                        input.getAttribute('value') ||
-                        ''
-                    ).trim();
-
-                    if (valor) {
-                        return valor;
-                    }
-                }
-
-                container = container.parentElement;
-            }
-
-            // Fallback: procura o próximo input
-            // após o marcador.
-            let proximo = marcador.nextElementSibling;
-
-            while (proximo) {
-
-                const input =
-                    proximo.matches &&
-                    proximo.matches('input')
-                        ? proximo
-                        : proximo.querySelector
-                            ? proximo.querySelector('input')
-                            : null;
-
-                if (input) {
-
-                    const valor = (
-                        input.value ||
-                        input.getAttribute('value') ||
-                        ''
-                    ).trim();
-
-                    if (valor) {
-                        return valor;
-                    }
-                }
-
-                proximo =
-                    proximo.nextElementSibling;
-            }
-
-            return null;
-        """)
-
-        if resultado:
-            return resultado
+        if valor:
+            return valor
 
         return False
 
-    valor = wait.until(encontrar_capacidade)
+    valor = wait.until(
+        capacidade_carregada
+    )
 
-    # Remove espaços e caracteres que não sejam números
+    print(
+        f"Valor de capacidade retornado "
+        f"pelo SREF: {valor}"
+    )
+
+    # Mantém somente os números.
     valor_limpo = "".join(
-        c for c in str(valor)
+        c
+        for c in str(valor)
         if c.isdigit()
     )
 
@@ -250,7 +230,9 @@ def obter_capacidade_sala(navegador, wait):
             f"a capacidade da sala: {valor}"
         )
 
-    capacidade = int(valor_limpo)
+    capacidade = int(
+        valor_limpo
+    )
 
     if capacidade <= 0:
         raise ValueError(
@@ -270,11 +252,22 @@ def ajustar_quantidade_pela_capacidade(
     quantidade_solicitada
 ):
     """
-    Regra:
-    - Se quantidade <= capacidade:
-        usa a quantidade solicitada.
-    - Se quantidade > capacidade:
-        usa a capacidade da sala.
+    Compara a quantidade solicitada com a capacidade
+    que o próprio SREF retornou.
+
+    Exemplo:
+
+        Solicitado = 70
+        Capacidade = 50
+
+        Resultado = 50
+
+    Se:
+
+        Solicitado = 40
+        Capacidade = 50
+
+        Resultado = 40
     """
 
     if quantidade_solicitada is None:
@@ -282,11 +275,23 @@ def ajustar_quantidade_pela_capacidade(
             "Quantidade de alunos não informada."
         )
 
+    quantidade_solicitada = str(
+        quantidade_solicitada
+    ).strip()
+
+    if not quantidade_solicitada:
+        raise ValueError(
+            "Quantidade de alunos não informada."
+        )
+
     try:
+
         quantidade_solicitada = int(
             quantidade_solicitada
         )
+
     except ValueError:
+
         raise ValueError(
             f"Quantidade inválida: "
             f"{quantidade_solicitada}"
@@ -294,7 +299,8 @@ def ajustar_quantidade_pela_capacidade(
 
     if quantidade_solicitada <= 0:
         raise ValueError(
-            "Quantidade de alunos deve ser maior que zero."
+            "Quantidade de alunos deve ser "
+            "maior que zero."
         )
 
     print(
@@ -302,13 +308,15 @@ def ajustar_quantidade_pela_capacidade(
         f"{quantidade_solicitada}"
     )
 
-    # A capacidade só pode ser lida
-    # depois que a sala foi selecionada.
+    # A capacidade vem do próprio SREF.
     capacidade = obter_capacidade_sala(
         navegador,
         wait
     )
 
+    # Regra:
+    # nunca informar no SREF uma quantidade
+    # maior que a capacidade da sala.
     quantidade_final = min(
         quantidade_solicitada,
         capacidade
@@ -317,12 +325,16 @@ def ajustar_quantidade_pela_capacidade(
     if quantidade_solicitada > capacidade:
 
         print(
-            "ATENÇÃO: quantidade solicitada "
+            "ATENÇÃO:"
+        )
+
+        print(
+            "A quantidade solicitada "
             "é maior que a capacidade da sala."
         )
 
         print(
-            f"Ajustando quantidade de "
+            f"Ajustando de "
             f"{quantidade_solicitada} "
             f"para {capacidade}."
         )
@@ -330,8 +342,8 @@ def ajustar_quantidade_pela_capacidade(
     else:
 
         print(
-            "Quantidade está dentro da "
-            "capacidade da sala."
+            "Quantidade dentro da capacidade "
+            "da sala."
         )
 
     campo_qtd = wait.until(
@@ -348,11 +360,14 @@ def ajustar_quantidade_pela_capacidade(
 
     time.sleep(0.3)
 
-    valor_real = campo_qtd.get_attribute(
-        "value"
+    valor_real = (
+        campo_qtd
+        .get_attribute("value")
     )
 
-    if valor_real != str(quantidade_final):
+    if valor_real != str(
+        quantidade_final
+    ):
         raise RuntimeError(
             f"Quantidade não foi preenchida "
             f"corretamente. "
@@ -361,8 +376,8 @@ def ajustar_quantidade_pela_capacidade(
         )
 
     print(
-        f"Quantidade final preenchida no SREF: "
-        f"{quantidade_final}"
+        f"Quantidade final preenchida "
+        f"no SREF: {quantidade_final}"
     )
 
     return quantidade_final
@@ -374,11 +389,14 @@ def fazer_login(
     usuario,
     senha
 ):
+
     print(
         "Abrindo página de login..."
     )
 
-    navegador.get(URL_LOGIN)
+    navegador.get(
+        URL_LOGIN
+    )
 
     # IES
     select_ies = wait.until(
@@ -387,7 +405,9 @@ def fazer_login(
         )
     )
 
-    Select(select_ies).select_by_visible_text(
+    Select(
+        select_ies
+    ).select_by_visible_text(
         "UJ"
     )
 
@@ -426,7 +446,8 @@ def fazer_login(
     botao_entrar.click()
 
     wait.until(
-        lambda d: "/Login" not in d.current_url
+        lambda d:
+        "/Login" not in d.current_url
     )
 
     print(
@@ -508,6 +529,7 @@ def marcar_dias(
             """, checkbox)
 
         if not checkbox.is_selected():
+
             raise RuntimeError(
                 f"Não foi possível selecionar "
                 f"o dia {dia}"
@@ -527,14 +549,15 @@ def preencher_reserva(
     # =========================================================
     # IMPORTANTE
     #
-    # "espaco_original" NÃO é usado pelo Selenium.
+    # espaco_original NÃO é utilizado pelo Selenium.
     #
-    # O Selenium usa somente:
+    # O Selenium utiliza somente:
+    #
     #   tipo_sala
     #   sala
     #
-    # Isso permite ao funcionário alterar a Sala SREF
-    # independentemente do espaço original do pedido.
+    # Portanto o funcionário pode alterar a Sala SREF
+    # independentemente do espaço original informado.
     # =========================================================
 
     tipo_sala = str(
@@ -613,7 +636,8 @@ def preencher_reserva(
     # Aguarda as opções de sala
     # serem carregadas.
     wait.until(
-        lambda d: d.execute_script("""
+        lambda d:
+        d.execute_script("""
             const lista =
                 document.getElementById(
                     'salaOptions'
@@ -644,9 +668,12 @@ def preencher_reserva(
             "Tipo de evento não informado."
         )
 
-    # Regra:
+    # Regra definida:
+    #
     # Aula -> Curso
+    #
     if evento.lower() == "aula":
+
         evento = "Curso"
 
         print(
@@ -730,7 +757,7 @@ def preencher_reserva(
     )
 
     # =========================================================
-    # RESERVA RECORRENTE
+    # RECORRENTE
     # =========================================================
 
     if tipo_reserva.lower() == "recorrente":
@@ -785,7 +812,7 @@ def preencher_reserva(
         )
 
     # =========================================================
-    # HORÁRIO INICIAL
+    # HORA INICIAL
     # =========================================================
 
     hora_inicio = str(
@@ -812,7 +839,7 @@ def preencher_reserva(
     )
 
     # =========================================================
-    # HORÁRIO FINAL
+    # HORA FINAL
     # =========================================================
 
     hora_fim = str(
@@ -842,8 +869,11 @@ def preencher_reserva(
     # SALA SREF
     # =========================================================
 
-    # A sala precisa ser selecionada ANTES da quantidade,
-    # porque a capacidade depende da sala.
+    # Primeiro selecionamos a sala.
+    #
+    # Isso faz o SREF carregar do próprio sistema
+    # a capacidade correspondente àquela sala.
+
     preencher_sala(
         navegador,
         wait,
@@ -851,7 +881,7 @@ def preencher_reserva(
     )
 
     # =========================================================
-    # QUANTIDADE X CAPACIDADE
+    # QUANTIDADE DE PESSOAS
     # =========================================================
 
     quantidade_solicitada = reserva.get(
@@ -943,10 +973,6 @@ def preencher_reserva(
     )
 
     print(
-        f"Capacidade da sala considerada."
-    )
-
-    print(
         f"Quantidade final no SREF: "
         f"{quantidade_final}"
     )
@@ -959,7 +985,7 @@ def preencher_reserva(
 def main():
 
     # =========================================================
-    # DADOS RECEBIDOS
+    # DADOS
     # =========================================================
 
     reserva_json = os.environ.get(
@@ -1002,7 +1028,7 @@ def main():
     )
 
     # =========================================================
-    # CONFIGURAÇÃO DO CHROME
+    # CHROME
     # =========================================================
 
     options = webdriver.ChromeOptions()
@@ -1027,8 +1053,6 @@ def main():
         "--window-size=1920,1080"
     )
 
-    # User-Agent necessário para evitar
-    # o bloqueio 403 observado anteriormente.
     options.add_argument(
         "--user-agent="
         "Mozilla/5.0 "
@@ -1075,8 +1099,8 @@ def main():
 
         wait.until(
             lambda d:
-                "/Reserva/Adicionar"
-                in d.current_url
+            "/Reserva/Adicionar"
+            in d.current_url
         )
 
         print(
@@ -1084,7 +1108,7 @@ def main():
         )
 
         # =====================================================
-        # PREENCHIMENTO
+        # PREENCHER
         # =====================================================
 
         preencher_reserva(
@@ -1094,7 +1118,7 @@ def main():
         )
 
         # =====================================================
-        # SCREENSHOT
+        # PRINT
         # =====================================================
 
         navegador.save_screenshot(
@@ -1174,7 +1198,6 @@ def main():
             "======================================"
         )
 
-        # Tenta salvar screenshot mesmo em caso de erro.
         try:
 
             navegador.save_screenshot(
@@ -1185,8 +1208,16 @@ def main():
                 "Screenshot de erro salvo."
             )
 
-        except Exception:
-            pass
+        except Exception as screenshot_erro:
+
+            print(
+                "Não foi possível salvar "
+                "o screenshot de erro:"
+            )
+
+            print(
+                str(screenshot_erro)
+            )
 
         raise
 
