@@ -7,6 +7,7 @@ on:
         description: "Dados da reserva em JSON"
         required: true
         type: string
+
       enviar_solicitacao:
         description: "Enviar solicitação no SREF?"
         required: true
@@ -40,10 +41,12 @@ jobs:
         run: |
           python automation/reserva_sref.py
 
-      - name: Salvar print da reserva
+      - name: Salvar prints da automação
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reserva-preenchida
-          path: reserva_preenchida.png
+          name: prints-reserva
+          path: |
+            reserva_preenchida.png
+            reserva_erro.png
           if-no-files-found: ignore
